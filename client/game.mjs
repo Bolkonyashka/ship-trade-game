@@ -5,6 +5,7 @@ class ShipBot {
         this.mapWidth = this.levelMapYX[0].length;
         this.mapHeight = this.levelMapYX.length;
         this.homePortId = ports.find(port => port.isHome).portId;
+        this.tradeInfo = { hold: [], payload: 0 }
 
         this.routes = null;
         this.tradeRoute = null;
@@ -12,6 +13,7 @@ class ShipBot {
         this.positionOnRoute = null;
         this.loadStack = [];
         this.portsToVisit = [];
+        this.results = [];
 
         this.maxPayloadReached = false;
         this.hasTradeRoute = false;
@@ -30,6 +32,175 @@ class ShipBot {
                         this.findShortestPath(gameState.ports[i], gameState.ports[j]);
             }
         }
+    }
+
+
+
+    // configureHold(incomeData) {
+    //     let freeSpace = this.CARGO_VOLUME;
+    //     const result = [];
+        
+    //     let { turnsForTravel, incomeList } = incomeData;
+    //     let incomeByTurn = 0;
+    //     let maxIncomeByTurn = 0;
+    //     let income = 0;
+
+    //     incomeList.sort((a, b) => b.incomeByVolumeUnit - a.incomeByVolumeUnit).forEach((product, index) => {
+    //         const factVolume = Math.min(product.amount * product.volume, freeSpace - freeSpace % product.volume);
+    //         const productIncome = factVolume * product.incomeByVolumeUnit;
+            
+    //         incomeByTurn = (income + productIncome) / turnsForTravel + 2;
+
+    //         if (incomeByTurn > maxIncomeByTurn) {
+    //             turnsForTravel += 2;
+    //             maxIncomeByTurn = incomeByTurn;
+    //             income += productIncome;
+    //             freeSpace -= factVolume;
+    //             result.push({ portId: product.portId, name: product.name, amount: factVolume / product.volume, productIncome });
+    //         }
+    //     }); 
+
+    //     return result;
+    // }
+
+    // getOneUnitOfVolumeIncomeLists({ goods, prices }) {
+    //     const results = {};
+
+    //     prices.forEach(portPrices => {
+    //         const incomeList = [];
+    //         const turnsForTravel = (this.routes[this.homePortId][portPrices.portId].length - 1) * 2;
+
+    //         Object.entries(portPrices).filter(([key]) => key !== 'portId').forEach(([name, price]) => {
+    //             const product = goods.find(product => product.name === name);
+
+    //             if (product) {
+    //                 const { volume } = product;
+    //                 const incomeByVolumeUnit = price / volume;
+    //                 // const incomeByVolumeUnitByTurn =  incomeByVolumeUnit / turnsForTravel
+    //                 incomeList.push({ portId: portPrices.portId, incomeByVolumeUnit, ...product });
+    //             }
+    //         });
+
+    //         results[portPrices.portId] = {turnsForTravel, incomeList};
+    //     });
+
+    //     return results;
+    // }
+
+    // configureHold(hold, freeSpace, goods, prices, lastPortId, turnsForRoute, minVolume, income) {
+    //     let maxAmount;
+    //     let factAmount;
+    //     let newIncome;
+    //     let newTurnsForRoute;
+    //     let turnsWithReturn;
+    //     let newPayload;
+    //     let holdGoods;
+    //     let bestConfig;
+
+    //     let maxPayload = hold.payload;
+
+    //     goods.filter(product => !hold.goodsList.some(productInHold => productInHold.name === product.name))
+    //         .forEach(product => {
+    //             maxAmount = Math.floor(freeSpace / product.volume);
+    //             factAmount = product.amount > maxAmount ? maxAmount : product.amount;
+
+    //             if (factAmount > 0) {
+    //                 prices.forEach(portPrices => {
+    //                     if (portPrices[product.name]) {
+    //                         newIncome = income + factAmount * portPrices[product.name];
+    //                         newTurnsForRoute = (lastPortId === portPrices.portId ? turnsForRoute : turnsForRoute + this.routes[lastPortId][portPrices.portId].length - 1) + 2;
+    //                         turnsWithReturn = newTurnsForRoute + this.routes[portPrices.portId][this.homePortId].length - 1;
+    //                         newPayload = newIncome / turnsWithReturn;
+    //                         holdGoods = {
+    //                             payload: newPayload,
+    //                             goodsList: hold.goodsList.concat([{ portId: portPrices.portId, name: product.name, amount: factAmount }]),
+    //                             turnsWithReturn,
+    //                             newIncome
+    //                         };
+
+    //                         this.results.push(holdGoods);
+
+    //                         if (freeSpace - factAmount * product.volume >= minVolume) {
+    //                             holdGoods = this.configureHold(holdGoods, freeSpace - factAmount * product.volume, goods, prices, portPrices.portId, newTurnsForRoute, minVolume, newIncome);
+    //                         }
+
+    //                         if (holdGoods.payload > maxPayload) {
+    //                             maxPayload = holdGoods.payload;
+    //                             bestConfig = holdGoods;
+    //                         }
+    //                     }
+    //                 });
+    //             }
+    //         });
+
+    //     if (bestConfig) {
+    //         hold = bestConfig;
+    //     }
+
+    //     return hold;
+    // }
+
+    configureHold(hold, goodsCount, freeSpace, goods, prices, lastPortId, turnsForRoute, minVolume, income) {
+        let maxAmount;
+        let factAmount;
+        let newIncome;
+        let newTurnsForRoute;
+        let turnsWithReturn;
+        let newPayload;
+        //let holdGoods;
+        //let bestConfig;
+
+        // hold = hold.slice(0, goodsCount);
+
+        //let maxPayload = hold.payload;
+
+        goods.filter(product => !hold.some(productInHold => productInHold.name === product.name))
+            .forEach(product => {
+                maxAmount = Math.floor(freeSpace / product.volume);
+                factAmount = product.amount > maxAmount ? maxAmount : product.amount;
+
+                if (factAmount > 0) {
+                    prices.forEach(portPrices => {
+                        if (portPrices[product.name]) {
+                            newIncome = income + factAmount * portPrices[product.name];
+                            newTurnsForRoute = (lastPortId === portPrices.portId ? turnsForRoute : turnsForRoute + this.routes[lastPortId][portPrices.portId].length - 1) + 2;
+                            turnsWithReturn = newTurnsForRoute + this.routes[portPrices.portId][this.homePortId].length - 1;
+                            newPayload = newIncome / turnsWithReturn;
+                            // holdGoods = {
+                            //     payload: newPayload,
+                            //     goodsList: hold.goodsList.concat([{ portId: portPrices.portId, name: product.name, amount: factAmount }]),
+                            //     turnsWithReturn,
+                            //     newIncome
+                            // };
+
+                            // this.results.push(holdGoods);
+                            
+                            hold.push({ portId: portPrices.portId, name: product.name, amount: factAmount });
+                            
+                            // if (this.tradeInfo.hold[0] && this.tradeInfo.hold[0].name === 'gold') {
+                            //     console.log(this.tradeInfo.hold);
+                            //     console.log(newPayload);
+                            // }
+                            if (newPayload > this.tradeInfo.payload) {
+                                this.tradeInfo.payload = newPayload;
+                                this.tradeInfo.hold = hold.slice();
+                            }
+                            if (freeSpace - factAmount * product.volume >= minVolume) {
+                                this.configureHold(hold, goodsCount + 1, freeSpace - factAmount * product.volume, goods, prices, portPrices.portId, newTurnsForRoute, minVolume, newIncome );
+                            }
+                            hold.pop();
+                            
+                            
+                        }
+                    });
+                }
+            });
+
+        // if (bestConfig) {
+        //     hold = bestConfig;
+        // }
+
+        //return hold;
     }
 
     increasePayloadByGoods({ goods, prices }) {
@@ -95,25 +266,26 @@ class ShipBot {
     }
 
     prepareTradeRoute(gameState) {
-        this.tradeRoute = { payload: 0, distance: 0, income: 0, tradeList: {}, freeSpace: this.CARGO_VOLUME, lastPortId: gameState.ports.find(port => port.isHome).portId, portsToVisit: [], goodsNames: [] };
-        this.maxPayloadReached = false;
+        // this.tradeRoute = { payload: 0, distance: 0, income: 0, tradeList: {}, freeSpace: this.CARGO_VOLUME, lastPortId: gameState.ports.find(port => port.isHome).portId, portsToVisit: [], goodsNames: [] };
+        // this.maxPayloadReached = false;
 
-        while (!this.maxPayloadReached) {
-            this.increasePayloadByGoods({ goods: gameState.goodsInPort, prices: gameState.prices });
-        }
+        // while (!this.maxPayloadReached) {
+        //     this.increasePayloadByGoods({ goods: gameState.goodsInPort, prices: gameState.prices });
+        // }
 
-        this.tradeRoute.portsToVisit.push(this.homePortId);
-        // this.tradeRoute.tradeList.forEach(product => {
-        //     this.loadStack.push({ name: product.name, amount: product.amount });
+        // this.tradeRoute.portsToVisit.push(this.homePortId);
+        // // this.tradeRoute.tradeList.forEach(product => {
+        // //     this.loadStack.push({ name: product.name, amount: product.amount });
 
-        // });
+        // // });
 
 
-        // this.loadStack = this.tradeRoute.tradeList.map(product => {
-        //     return { name: product.name, amount: product.amount }
-        // });
+        // // this.loadStack = this.tradeRoute.tradeList.map(product => {
+        // //     return { name: product.name, amount: product.amount }
+        // // });
 
-        this.hasTradeRoute = true;
+        // this.hasTradeRoute = true;
+        //this.tradeRoute = { portsVisitOrder = [],  }
     }
 
     prepareRouteToPort(currentPortId, nextPortId) {
@@ -222,6 +394,12 @@ export function startGame(levelMap, gameState) {
     console.log(shipBot.levelMapYX);
     console.log(shipBot.routes);
     // console.log(shipBot.tradeRoute);
+    console.time('bugaga');
+    shipBot.configureHold([], 0, shipBot.CARGO_VOLUME, gameState.goodsInPort, gameState.prices, shipBot.homePortId, 0, 1, 0);
+    console.timeEnd('bugaga');
+
+    console.log(shipBot.tradeInfo);
+    //console.log(shipBot.results.sort((a, b) => b.payload - a.payload));
 }
 
 export function getNextCommand(gameState) {
