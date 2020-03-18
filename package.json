@@ -4,11 +4,14 @@
   "description": "test task for internship",
   "scripts": {
     "start": "node server/server.js",
-    "test": "mocha --require @babel/polyfill --require @babel/register ./tests"
+    "test": "mocha --require @babel/polyfill --require @babel/register ./tests",
+    "lint": "eslint ./client/game.mjs"
   },
   "author": "Kontur",
   "license": "ISC",
   "dependencies": {
+    "eslint": "^6.8.0",
+    "eslint-config-hrundel": "^1.4.1",
     "express": "^4.17.1"
   },
   "devDependencies": {
