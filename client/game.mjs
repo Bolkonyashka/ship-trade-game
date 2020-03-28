@@ -1,5 +1,4 @@
 function findShortestPath(start, finish, mapYX, dangerPoints = []) {
-    console.time('PUK');
     const distanceMapYX = [];
     const queue = [start];
     const mapWidth = mapYX[0].length;
@@ -49,52 +48,41 @@ function findShortestPath(start, finish, mapYX, dangerPoints = []) {
         }
 
         path.push({ x: start.x, y: start.y });
-        console.timeEnd('PUK');
-        return path.reverse();
+
+        return path;
     } else {
         return null;
     }
 }
 
-function getRoutesToPorts(gameState, mapYX) {
-    const routes = [];
+function getRoutesToPorts(ports, mapYX) {
+    const routeList = {};
+    const homePort = ports.find(port => port.isHome);
 
-    for (let i = 0; i < gameState.ports.length; i++) {
-        routes[i] = [];
-
-        for (let j = 0; j < gameState.ports.length; j++) {
-            routes[i][j] = j === i ? null :
-                j < i ? routes[j][i].slice().reverse() :
-                    findShortestPath(gameState.ports[i], gameState.ports[j], mapYX);
+    ports.forEach(port => {
+        if (!port.isHome) {
+            routeList[port.portId] = findShortestPath(homePort, port, mapYX);
         }
-    }
+    });
 
-    return routes;
+    return routeList;
 }
 
-function configureBestPayloadHold(tradeInfo, goods, portPrices, turnsForRoute, hold = [], freeSpace = HOLD_VOLUME, income = 0) {
-    let maxAmount;
-    let factAmount;
-    let product;
-    let newIncome;
-    let newTurnsForRoute;
-    let newPayload;
-    let newFreeSpace;
-
+function configureBestPayloadHold(tradeInfo, goodsInPort, portPrices, turnsForRoute, hold = [], freeSpace = HOLD_VOLUME, income = 0) {
     const { portId, ...prices } = portPrices;
 
     Object.entries(prices).forEach(([name, cost]) => {
-        product = goods.find(product => product.name === name);
+        const product = goodsInPort.find(product => product.name === name);
 
-        if (product && hold.findIndex(({ name: productInHoldName }) => productInHoldName === name) === -1) {
-            maxAmount = Math.floor(freeSpace / product.volume);
-            factAmount = product.amount > maxAmount ? maxAmount : product.amount;
+        if (product && !hold.some(({ name: productInHoldName }) => productInHoldName === name)) {
+            const maxAmount = Math.floor(freeSpace / product.volume);
+            const factAmount = product.amount > maxAmount ? maxAmount : product.amount;
 
             if (factAmount > 0) {
-                newTurnsForRoute = turnsForRoute + TURNS_FOR_LOAD_UNLOAD;
-                newIncome = income + factAmount * cost;
-                newPayload = newIncome / newTurnsForRoute;
-                newFreeSpace = freeSpace - factAmount * product.volume;
+                const newTurnsForRoute = turnsForRoute + TURNS_FOR_LOAD_AND_SELL;
+                const newIncome = income + factAmount * cost;
+                const newPayload = newIncome / newTurnsForRoute;
+                const newFreeSpace = freeSpace - factAmount * product.volume;
 
                 hold.push({ name, amount: factAmount });
 
@@ -105,7 +93,7 @@ function configureBestPayloadHold(tradeInfo, goods, portPrices, turnsForRoute, h
                 }
 
                 if (newFreeSpace > 0) {
-                    configureBestPayloadHold(tradeInfo, goods, portPrices, newTurnsForRoute, hold, newFreeSpace, newIncome);
+                    configureBestPayloadHold(tradeInfo, goodsInPort, portPrices, newTurnsForRoute, hold, newFreeSpace, newIncome);
                 }
 
                 hold.pop();
@@ -114,49 +102,43 @@ function configureBestPayloadHold(tradeInfo, goods, portPrices, turnsForRoute, h
     });
 }
 
-function getTradeInfo(portsPrices, goods, routes, homePortId) {
+function getTradeInfo(portsPrices, goodsInPort, routeList) {
     const tradeInfo = { payload: 0 };
-    
-    let turnsForRoute;
 
     portsPrices.forEach(portPrices => {
-        turnsForRoute = (routes[homePortId][portPrices.portId].length - 1) * 2;
+        const turnsForRoute = (routeList[portPrices.portId].length - 1) * 2;
 
-        configureBestPayloadHold(tradeInfo, goods, portPrices, turnsForRoute);
+        configureBestPayloadHold(tradeInfo, goodsInPort, portPrices, turnsForRoute);
     });
 
     return tradeInfo;
 }
 
-function getLoadCommand({ name, amount }) {
+function getRouteInfo(routeList, port, isToHome = false) {
+    const result = routeList[port].slice();
+
+    if (isToHome) {
+        result.reverse();
+    }
+
+    result.splice(-1, 1);
+
+    return result;
+}
+
+function formLoadCommand({ name, amount }) {
     return `LOAD ${name} ${amount}`;
 }
 
-function getSellComand({ name, amount }) {
+function formSellComand({ name, amount }) {
     return `SELL ${name} ${amount}`;
 }
 
-function getMoveCommand(pirates, routeInfo, currentPositionX, currentPositionY) {
-    let { x: nextPositionX, y: nextPositionY } = routeInfo.route[routeInfo.positionOnRoute + 1];
-    
-    for (let i = 0; i < pirates.length; i++) {
-        const { x, y } = pirates[i];
-        const xDifference = Math.abs(nextPositionX - x);
-        const yDifference = Math.abs(nextPositionY - y);
+function formWaitCommand() {
+    return 'WAIT';
+}
 
-        if (xDifference === 1 && yDifference === 0 || xDifference === 0 && yDifference === 1) {
-            return 'WAIT';
-        }
-
-        if (xDifference === 0 && yDifference === 0) {
-            routeInfo.route = findShortestPath({x: currentPositionX, y: currentPositionY}, routeInfo.route[routeInfo.route.length - 1], mapYX, [{x, y}]);
-            routeInfo.positionOnRoute = 0;
-            return getMoveCommand(pirates, routeInfo, currentPositionX, currentPositionY);
-        }
-    }
-
-    routeInfo.positionOnRoute++;
-
+function formMoveCommand({ x: currentPositionX, y: currentPositionY }, { x: nextPositionX, y: nextPositionY }) {
     if (currentPositionX !== nextPositionX) {
         return nextPositionX > currentPositionX ? 'E' : 'W';
     }
@@ -166,22 +148,18 @@ function getMoveCommand(pirates, routeInfo, currentPositionX, currentPositionY) 
     }
 }
 
-function getRouteInfo(currentPortId, nextPortId) {
-    return { route: routes[currentPortId][nextPortId], positionOnRoute: 0 };
-}
-
 const HOLD_VOLUME = 368;
-const TURNS_FOR_LOAD_UNLOAD = 2;
+const TURNS_FOR_LOAD_AND_SELL = 2;
 
 let mapYX;
-let routes;
+let routeList;
 let homePortId;
 let tradeInfo;
 let currentRoute;
 
 export function startGame(levelMap, gameState) {
     mapYX = levelMap.split('\n');
-    routes = getRoutesToPorts(gameState, mapYX);
+    routeList = getRoutesToPorts(gameState.ports, mapYX);
     homePortId = gameState.ports.find(port => port.isHome).portId;
     tradeInfo = null;
     currentRoute = null;
@@ -191,59 +169,42 @@ export function getNextCommand(gameState) {
     const { ship: { x, y, goods: goodsInShip }, prices: portsPrices, goodsInPort, pirates } = gameState;
     const currentPosition = mapYX[y][x];
 
-    let command;
+    if (currentPosition === 'H') {
+        if (!tradeInfo) {
+            tradeInfo = getTradeInfo(portsPrices, goodsInPort, routeList);
+        }
 
-    // if (currentPosition === 'H') {
-    //     if (!tradeInfo) {
-    //         tradeInfo = getTradeInfo(portsPrices, goodsInPort, routes, homePortId);
-    //     }
+        if (tradeInfo.goodsToLoad.length) {
+            return formLoadCommand(tradeInfo.goodsToLoad.pop());
+        } else {
+            currentRoute = getRouteInfo(routeList, tradeInfo.portId);
+        }
+    } else if (currentPosition === 'O') {
+        if (goodsInShip.length) {
+            return formSellComand(goodsInShip[0]);
+        } else {
+            currentRoute = getRouteInfo(routeList ,tradeInfo.portId, true);
+            tradeInfo = null;
+        }
+    } 
 
-    //     if (tradeInfo.goodsToLoad.length) {
-    //         command = getLoadCommand(tradeInfo.goodsToLoad.pop());
-    //     } else {
-    //         currentRoute = getRouteInfo(homePortId, tradeInfo.portId);
-    //         command = getMoveCommand(pirates, currentRoute, x, y);
-    //     }
-    // } else if (currentPosition === 'O') {
-    //     if (goodsInShip.length) {
-    //         command = getSellComand(goodsInShip[0]);
-    //     } else {
-    //         currentRoute = getRouteInfo(tradeInfo.portId, homePortId);
-    //         command = getMoveCommand(pirates, currentRoute, x, y);
-    //         tradeInfo = null;
-    //     }
-    // } else {
-    //     command = getMoveCommand(pirates, currentRoute, x, y);
-    // }
+    const { x: nextPositionX, y: nextPositionY } = currentRoute[currentRoute.length - 1];
 
-    switch (currentPosition) {
-        case 'H':
-            if (!tradeInfo) {
-                tradeInfo = getTradeInfo(portsPrices, goodsInPort, routes, homePortId);
-            }
+    for (let i = 0; i < pirates.length; i++) {
+        const { x: pirateShipX, y: pirateShipY } = pirates[i];
+        const xDifference = Math.abs(nextPositionX - pirateShipX);
+        const yDifference = Math.abs(nextPositionY - pirateShipY);
 
-            if (tradeInfo.goodsToLoad.length) {
-                command = getLoadCommand(tradeInfo.goodsToLoad.pop());
-            } else {
-                currentRoute = getRouteInfo(homePortId, tradeInfo.portId);
-                command = getMoveCommand(pirates, currentRoute, x, y);
-            }
+        if (xDifference === 1 && yDifference === 0 || xDifference === 0 && yDifference === 1) {
+            return formWaitCommand();
+        }
 
+        if (xDifference === 0 && yDifference === 0) {
+            currentRoute = findShortestPath({ x, y }, currentRoute[0], mapYX, pirates);
+            currentRoute.splice(-1, 1);
             break;
-        case 'O':
-            if (goodsInShip.length) {
-                command = getSellComand(goodsInShip[0]);
-            } else {
-                currentRoute = getRouteInfo(tradeInfo.portId, homePortId);
-                command = getMoveCommand(pirates, currentRoute, x, y);
-                tradeInfo = null;
-            }
-
-            break;
-        default:
-            command = getMoveCommand(pirates, currentRoute, x, y);
+        }
     }
 
-    console.log(command);
-    return command;
+    return formMoveCommand({ x, y }, currentRoute.pop());
 }
