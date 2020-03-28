@@ -1,8 +1,9 @@
-function findShortestPath(start, finish, mapYX, dangerPoints = []) {
+function findShortestPath(start, finish, mapYX, options) {
     const distanceMapYX = [];
     const queue = [start];
     const mapWidth = mapYX[0].length;
     const mapHeight = mapYX.length;
+    const dangerPoints = options && options.dangerPoints || [];
 
     for (let i = 0; i < mapHeight; i++) {
         distanceMapYX.push(Array(mapWidth).fill(-1));
@@ -47,8 +48,10 @@ function findShortestPath(start, finish, mapYX, dangerPoints = []) {
             }
         }
 
-        path.push({ x: start.x, y: start.y });
-
+        if (options && options.addStartPoint) {
+            path.push({ x: start.x, y: start.y });
+        }
+        
         return path;
     } else {
         return null;
@@ -61,7 +64,7 @@ function getRoutesToPorts(ports, mapYX) {
 
     ports.forEach(port => {
         if (!port.isHome) {
-            routeList[port.portId] = findShortestPath(homePort, port, mapYX);
+            routeList[port.portId] = findShortestPath(homePort, port, mapYX, { addStartPoint: true });
         }
     });
 
@@ -105,7 +108,7 @@ function configureBestPayloadHold(tradeInfo, goodsInPort, portPrices, turnsForRo
 function getTradeInfo(portsPrices, goodsInPort, routeList) {
     const tradeInfo = { payload: 0 };
 
-    portsPrices.forEach(portPrices => {
+    portsPrices.filter(({ portId }) => routeList[portId]).forEach(portPrices => {
         const turnsForRoute = (routeList[portPrices.portId].length - 1) * 2;
 
         configureBestPayloadHold(tradeInfo, goodsInPort, portPrices, turnsForRoute);
@@ -114,14 +117,14 @@ function getTradeInfo(portsPrices, goodsInPort, routeList) {
     return tradeInfo;
 }
 
-function getRouteInfo(routeList, port, isToHome = false) {
+function getRouteInfo(routeList, port, options) {
     const result = routeList[port].slice();
 
-    if (isToHome) {
+    if (options && options.isToHome) {
         result.reverse();
     }
 
-    result.splice(-1, 1);
+    result.pop();
 
     return result;
 }
@@ -132,6 +135,10 @@ function formLoadCommand({ name, amount }) {
 
 function formSellComand({ name, amount }) {
     return `SELL ${name} ${amount}`;
+}
+
+function formUnloadCommand({ name, amount }) {
+    return `UNLOAD ${name} ${amount}`;
 }
 
 function formWaitCommand() {
@@ -163,13 +170,18 @@ export function startGame(levelMap, gameState) {
     homePortId = gameState.ports.find(port => port.isHome).portId;
     tradeInfo = null;
     currentRoute = null;
+    console.log(gameState);
 }
 
 export function getNextCommand(gameState) {
-    const { ship: { x, y, goods: goodsInShip }, prices: portsPrices, goodsInPort, pirates } = gameState;
+    const { ship: { x, y, goods: goodsInShip }, prices: portsPrices, goodsInPort, pirates, ports } = gameState;
     const currentPosition = mapYX[y][x];
 
     if (currentPosition === 'H') {
+        if (!tradeInfo && goodsInShip.length) {
+            return formUnloadCommand(goodsInShip[0]);
+        }
+
         if (!tradeInfo) {
             tradeInfo = getTradeInfo(portsPrices, goodsInPort, routeList);
         }
@@ -183,10 +195,12 @@ export function getNextCommand(gameState) {
         if (goodsInShip.length) {
             return formSellComand(goodsInShip[0]);
         } else {
-            currentRoute = getRouteInfo(routeList ,tradeInfo.portId, true);
+            currentRoute = getRouteInfo(routeList, tradeInfo.portId, { isToHome: true });
             tradeInfo = null;
         }
-    } 
+    } else if (currentPosition === '~' && !currentRoute) {
+        currentRoute = findShortestPath({ x, y }, ports.find(port => port.isHome), mapYX);
+    }
 
     const { x: nextPositionX, y: nextPositionY } = currentRoute[currentRoute.length - 1];
 
@@ -200,8 +214,8 @@ export function getNextCommand(gameState) {
         }
 
         if (xDifference === 0 && yDifference === 0) {
-            currentRoute = findShortestPath({ x, y }, currentRoute[0], mapYX, pirates);
-            currentRoute.splice(-1, 1);
+            currentRoute = findShortestPath({ x, y }, currentRoute[0], mapYX, { dangerPoints: [{ x: pirateShipX, y: pirateShipY }] });
+
             break;
         }
     }
