@@ -12,18 +12,29 @@ function findShortestPath(start, finish, mapYX, options) {
     distanceMapYX[start.y][start.x] = 0;
 
     while (distanceMapYX[finish.y][finish.x] === -1 && queue.length > 0) {
-        let { x: pointX, y: pointY } = queue.shift();
-        let distance = distanceMapYX[pointY][pointX];
+        const { x: pointX, y: pointY } = queue.shift();
+        const distance = distanceMapYX[pointY][pointX];
 
         for (let x = pointX - 1; x <= pointX + 1; x++) {
             for (let y = pointY - 1; y <= pointY + 1; y++) {
-                if (x === pointX && y === pointY || x !== pointX && y !== pointY) {
+                const isSamePoint = x === pointX && y === pointY;
+                const isDiagonalPoint = x !== pointX && y !== pointY;
+
+                if (isSamePoint || isDiagonalPoint) {
                     continue;
                 }
 
-                if (x >= 0 && x < mapWidth && y >= 0 && y < mapHeight && mapYX[y][x] !== '#' && distanceMapYX[y][x] === -1 && !dangerPoints.some(({x: dangerPointX, y: dangerPointY}) => x === dangerPointX && y === dangerPointY)) {
-                    queue.push({ x, y });
-                    distanceMapYX[y][x] = distance + 1;
+                const isCorrectPoint = x >= 0 && x < mapWidth && y >= 0 && y < mapHeight;
+
+                if (isCorrectPoint) {
+                    const isPossiblePoint = mapYX[y][x] !== '#';
+                    const isNotVisitedPoint = distanceMapYX[y][x] === -1;
+                    const isSafePoint = !dangerPoints.some(({ x: dangerPointX, y: dangerPointY }) => x === dangerPointX && y === dangerPointY);
+
+                    if (isPossiblePoint && isSafePoint && isNotVisitedPoint) {
+                        queue.push({ x, y });
+                        distanceMapYX[y][x] = distance + 1;
+                    }
                 }
             }
         }
@@ -51,16 +62,15 @@ function findShortestPath(start, finish, mapYX, options) {
         if (options && options.addStartPoint) {
             path.push({ x: start.x, y: start.y });
         }
-        
+
         return path;
     } else {
         return null;
     }
 }
 
-function getRoutesToPorts(ports, mapYX) {
+function getRoutesToPorts(homePort, ports, mapYX) {
     const routeList = {};
-    const homePort = ports.find(port => port.isHome);
 
     ports.forEach(port => {
         if (!port.isHome) {
@@ -108,16 +118,18 @@ function configureBestPayloadHold(tradeInfo, goodsInPort, portPrices, turnsForRo
 function getTradeInfo(portsPrices, goodsInPort, routeList) {
     const tradeInfo = { payload: 0 };
 
-    portsPrices.filter(({ portId }) => routeList[portId]).forEach(portPrices => {
-        const turnsForRoute = (routeList[portPrices.portId].length - 1) * 2;
+    portsPrices.forEach(portPrices => {
+        if (routeList[portPrices.portId]) {
+            const turnsForRoute = (routeList[portPrices.portId].length - 1) * 2;
 
-        configureBestPayloadHold(tradeInfo, goodsInPort, portPrices, turnsForRoute);
+            configureBestPayloadHold(tradeInfo, goodsInPort, portPrices, turnsForRoute);
+        }
     });
 
     return tradeInfo;
 }
 
-function getRouteInfo(routeList, port, options) {
+function getRoute(routeList, port, options) {
     const result = routeList[port].slice();
 
     if (options && options.isToHome) {
@@ -160,64 +172,76 @@ const TURNS_FOR_LOAD_AND_SELL = 2;
 
 let mapYX;
 let routeList;
-let homePortId;
+let homePort;
 let tradeInfo;
 let currentRoute;
 
 export function startGame(levelMap, gameState) {
     mapYX = levelMap.split('\n');
-    routeList = getRoutesToPorts(gameState.ports, mapYX);
-    homePortId = gameState.ports.find(port => port.isHome).portId;
+    homePort = gameState.ports.find(port => port.isHome);
+    routeList = getRoutesToPorts(homePort, gameState.ports, mapYX);
     tradeInfo = null;
     currentRoute = null;
-    console.log(gameState);
 }
 
 export function getNextCommand(gameState) {
-    const { ship: { x, y, goods: goodsInShip }, prices: portsPrices, goodsInPort, pirates, ports } = gameState;
+    const { ship: { x, y, goods: goodsInShip }, prices: portsPrices, goodsInPort, pirates } = gameState;
     const currentPosition = mapYX[y][x];
 
-    if (currentPosition === 'H') {
-        if (!tradeInfo && goodsInShip.length) {
-            return formUnloadCommand(goodsInShip[0]);
-        }
+    switch (currentPosition) {
+        case 'H':
+            if (!tradeInfo && goodsInShip.length) {
+                return formUnloadCommand(goodsInShip[0]);
+            }
 
-        if (!tradeInfo) {
-            tradeInfo = getTradeInfo(portsPrices, goodsInPort, routeList);
-        }
+            if (!tradeInfo) {
+                tradeInfo = getTradeInfo(portsPrices, goodsInPort, routeList);
+            }
 
-        if (tradeInfo.goodsToLoad.length) {
-            return formLoadCommand(tradeInfo.goodsToLoad.pop());
-        } else {
-            currentRoute = getRouteInfo(routeList, tradeInfo.portId);
-        }
-    } else if (currentPosition === 'O') {
-        if (goodsInShip.length) {
-            return formSellComand(goodsInShip[0]);
-        } else {
-            currentRoute = getRouteInfo(routeList, tradeInfo.portId, { isToHome: true });
-            tradeInfo = null;
-        }
-    } else if (currentPosition === '~' && !currentRoute) {
-        currentRoute = findShortestPath({ x, y }, ports.find(port => port.isHome), mapYX);
+            if (tradeInfo.goodsToLoad.length) {
+                return formLoadCommand(tradeInfo.goodsToLoad.pop());
+            } else {
+                currentRoute = getRoute(routeList, tradeInfo.portId);
+            }
+
+            break;
+        case 'O':
+            if (goodsInShip.length) {
+                return formSellComand(goodsInShip[0]);
+            } else {
+                currentRoute = getRoute(routeList, tradeInfo.portId, { isToHome: true });
+                tradeInfo = null;
+            }
+
+            break;
+        case '~':
+            if (!currentRoute) {
+                currentRoute = findShortestPath({ x, y }, homePort, mapYX);
+            }
     }
 
     const { x: nextPositionX, y: nextPositionY } = currentRoute[currentRoute.length - 1];
 
-    for (let i = 0; i < pirates.length; i++) {
-        const { x: pirateShipX, y: pirateShipY } = pirates[i];
+    let needToWait = false;
+    let needToManeuver = false;
+
+    pirates.forEach(({ x: pirateShipX, y: pirateShipY }) => {
         const xDifference = Math.abs(nextPositionX - pirateShipX);
         const yDifference = Math.abs(nextPositionY - pirateShipY);
 
         if (xDifference === 1 && yDifference === 0 || xDifference === 0 && yDifference === 1) {
-            return formWaitCommand();
+            needToWait = true;
         }
 
         if (xDifference === 0 && yDifference === 0) {
-            currentRoute = findShortestPath({ x, y }, currentRoute[0], mapYX, { dangerPoints: [{ x: pirateShipX, y: pirateShipY }] });
-
-            break;
+            needToManeuver = true;
         }
+    });
+
+    if (needToManeuver) {
+        currentRoute = findShortestPath({ x, y }, currentRoute[0], mapYX, { dangerPoints: pirates });
+    } else if (needToWait) {
+        return formWaitCommand();
     }
 
     return formMoveCommand({ x, y }, currentRoute.pop());
