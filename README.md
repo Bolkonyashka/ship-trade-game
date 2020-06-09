@@ -1,2 +1,2 @@
 # ship-trade-game
-Test task from SKB Kontur
+just for fun
